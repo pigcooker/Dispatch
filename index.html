@@ -617,6 +617,7 @@ const SOURCES = [
   { id: 'variety',      name: 'Variety',         cat: 'Entertainment', cred: 'high',  url: 'https://variety.com/feed/', logo: logoFor('variety.com') },
   { id: 'rollingstone', name: 'Rolling Stone',   cat: 'Entertainment', cred: 'mixed', url: 'https://www.rollingstone.com/feed/', logo: logoFor('rollingstone.com') },
   { id: 'tmz',          name: 'TMZ',             cat: 'Entertainment', cred: 'low',   url: 'https://feeds.tmz.com/latest-news/rss', logo: logoFor('tmz.com') },
+  { id: 'kottke',       name: 'Kottke.org',      cat: 'Entertainment', cred: 'high',  url: 'https://feeds.kottke.org/main', logo: logoFor('kottke.org') },
 
   { id: 'cubs-mlb',     name: 'Cubs (MLB.com)',  cat: 'Cubs',          cred: 'high',  url: 'https://www.mlb.com/cubs/feeds/news/rss.xml', logo: logoFor('mlb.com') },
   { id: 'cubs-insider',   name: 'Cubs Insider',    cat: 'Cubs',          cred: 'mixed', url: 'https://cubsinsider.com/feed/', logo: logoFor('cubsinsider.com') },
@@ -629,7 +630,6 @@ const SOURCES = [
   { id: 'latimes-local', name: 'LA Times (Local)', cat: 'LA Local',    cred: 'high',  url: 'https://www.latimes.com/local/rss2.0.xml', logo: logoFor('latimes.com') },
   { id: 'ktla',          name: 'KTLA',            cat: 'LA Local',     cred: 'high',  url: 'https://ktla.com/feed/', logo: logoFor('ktla.com') },
 
-  { id: 'kottke',       name: 'Kottke.org',      cat: 'Kottke',        cred: 'high',  url: 'https://feeds.kottke.org/main', logo: logoFor('kottke.org') },
 
 ];
 
@@ -918,13 +918,22 @@ async function loadSource(s) {
     const res = await fetch(proxy, BUST_CACHE ? { cache: 'no-store' } : {});
     const json = await res.json();
     if (json.status === 'ok' && json.items) {
-      feedData[s.id] = json.items.map(it => ({
-        title: it.title,
-        link: it.link,
-        pubDate: it.pubDate,
-        image: it.thumbnail || it.enclosure?.link || extractImgFromHTML(it.content) || extractImgFromHTML(it.description) || null,
-        snippet: snippetFromHTML(it.description) || snippetFromHTML(it.content)
-      }));
+      feedData[s.id] = json.items.map(it => {
+        let title = it.title;
+        let snippet = snippetFromHTML(it.description) || snippetFromHTML(it.content);
+        // Kottke's feed cuts headline-less link posts off with "..."; use the full post text instead
+        if (s.id === 'kottke' && /(\.\.\.|\u2026)\s*$/.test(title || '')) {
+          const full = snippetFromHTML(it.content || it.description, 2000);
+          if (full) { title = full; snippet = ''; }
+        }
+        return {
+          title,
+          link: it.link,
+          pubDate: it.pubDate,
+          image: it.thumbnail || it.enclosure?.link || extractImgFromHTML(it.content) || extractImgFromHTML(it.description) || null,
+          snippet
+        };
+      });
     } else {
       feedData[s.id] = [];
     }
