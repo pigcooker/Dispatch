@@ -508,17 +508,6 @@
   .cubs-score { font-size: 15px; font-weight: 800; color: var(--accent); }
   .cubs-sub { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
   .cubs-series { width: 100%; font-size: 12.5px; font-weight: 700; color: var(--accent); }
-  .cubs-flag {
-    width: 38px; height: 26px;
-    border-radius: 3px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 17px;
-    font-family: Georgia, 'Times New Roman', serif;
-    margin-top: 4px;
-    flex-shrink: 0;
-  }
-  .cubs-flag-w { background: #ffffff; color: #0e3386; border: 1px solid #0e3386; }
-  .cubs-flag-l { background: #0e3386; color: #ffffff; border: 1px solid #0e3386; }
   .cubs-table {
     font-size: 12px;
     border-collapse: collapse;
@@ -1206,7 +1195,6 @@ async function loadCubs() {
     const last = past[past.length - 1];
     const next = future.find(g => g !== live);
 
-    let flagHTML = '';
     let gamesHTML = '';
 
     // Postseason series status
@@ -1233,11 +1221,8 @@ async function loadCubs() {
       const os = last.teams[oppSide(last)].score;
       const opp = last.teams[oppSide(last)].team.name;
       const result = cs > os ? 'W' : (cs < os ? 'L' : 'T');
-      if (!live && result !== 'T') {
-        flagHTML = `<div class="cubs-flag cubs-flag-${result.toLowerCase()}" title="${result === 'W' ? 'Cubs won' : 'Cubs lost'}">${result}</div>`;
-      }
       const d = last.decisions || {};
-      const dec = [d.winner && `W: ${d.winner.fullName}`, d.loser && `L: ${d.loser.fullName}`, d.save && `S: ${d.save.fullName}`].filter(Boolean).join(' · ');
+      const dec = [d.winner && `W: ${d.winner.fullName}`, d.loser && `L: ${d.loser.fullName}`, d.save && `S: ${d.save.fullName}`].filter(Boolean).join('<br>');
       gamesHTML += `<div class="cubs-game"><b>Last game</b><br>
         <span class="cubs-score">${result} ${cs}–${os}</span> ${cubsSide(last) === 'home' ? 'vs' : '@'} ${opp}<br>
         ${new Date(last.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -1253,7 +1238,7 @@ async function loadCubs() {
         oppP ? pitcherERA(oppP.id, next.season) : null
       ]);
       const pName = (p, era) => p ? `${p.fullName}${era ? ` (${era} ERA)` : ''}` : 'TBD';
-      const pitchers = (cubsP || oppP) ? `${pName(cubsP, cubsERA)} vs ${pName(oppP, oppERA)}` : '';
+      const pitchers = (cubsP || oppP) ? `CHC: ${pName(cubsP, cubsERA)}<br>${teamAbbr(next.teams[oppSide(next)].team)}: ${pName(oppP, oppERA)}` : '';
       const bc = broadcastLine(next);
       gamesHTML += `<div class="cubs-game"><b>Next game</b><br>
         ${cubsSide(next) === 'home' ? 'vs' : '@'} ${opp}<br>
@@ -1304,7 +1289,7 @@ async function loadCubs() {
       }
     }
 
-    const body = seriesHTML + flagHTML + gamesHTML + seasonHTML + divisionHTML + wildCardHTML;
+    const body = seriesHTML + gamesHTML + seasonHTML + divisionHTML + wildCardHTML;
     cubsWidgetHTML = body || '<span class="err-msg">No Cubs data available right now</span>';
   } catch (e) {
     cubsWidgetHTML = '<span class="err-msg">Cubs data unavailable</span>';
