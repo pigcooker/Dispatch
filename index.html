@@ -503,14 +503,27 @@
   /* Cubs */
   .cat-pinned-widget { margin-bottom: 16px; }
   #cubs-body { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
-  .cubs-game { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  .cubs-game { font-size: 12.5px; color: var(--muted); line-height: 1.6; max-width: 260px; }
   .cubs-game b { color: var(--text); }
   .cubs-score { font-size: 15px; font-weight: 800; color: var(--accent); }
-  #cubs-standings {
+  .cubs-sub { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+  .cubs-series { width: 100%; font-size: 12.5px; font-weight: 700; color: var(--accent); }
+  .cubs-flag {
+    width: 38px; height: 26px;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 17px;
+    font-family: Georgia, 'Times New Roman', serif;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+  .cubs-flag-w { background: #ffffff; color: #0e3386; border: 1px solid #0e3386; }
+  .cubs-flag-l { background: #0e3386; color: #ffffff; border: 1px solid #0e3386; }
+  .cubs-table {
     font-size: 12px;
     border-collapse: collapse;
   }
-  #cubs-standings th {
+  .cubs-table th {
     text-align: left;
     color: var(--faint);
     font-weight: 600;
@@ -519,8 +532,9 @@
     letter-spacing: 0.05em;
     padding: 2px 10px 4px 0;
   }
-  #cubs-standings td { padding: 2px 10px 2px 0; color: var(--muted); }
-  #cubs-standings tr.is-cubs td { color: var(--accent); font-weight: 700; }
+  .cubs-table td { padding: 2px 10px 2px 0; color: var(--muted); }
+  .cubs-table tr.is-cubs td { color: var(--accent); font-weight: 700; }
+  .cubs-table tr.wc-cut td { border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -1087,12 +1101,86 @@ async function loadWeather() {
 }
 
 // ---------------------------------------------------------------
-// Cubs widget — last/next game + NL Central standings, via MLB Stats API (public, no key)
+// Cubs widget — live/last/next game, season line, NL Central + NL Wild Card,
+// via MLB Stats API (public, no key)
 // ---------------------------------------------------------------
 const CUBS_TEAM_ID = 112;
 const NL_CENTRAL_DIVISION_ID = 205;
+const NL_ABBR = { 109: 'ARI', 144: 'ATL', 112: 'CHC', 113: 'CIN', 115: 'COL', 119: 'LAD', 146: 'MIA', 158: 'MIL', 121: 'NYM', 143: 'PHI', 134: 'PIT', 135: 'SD', 137: 'SF', 138: 'STL', 120: 'WSH' };
+const POSTSEASON_TYPES = ['F', 'D', 'L', 'W'];
+const CLINCH_TEXT = { z: 'Clinched bye', y: 'Clinched division', w: 'Clinched wild card', x: 'Clinched playoff spot' };
 
 let cubsWidgetHTML = '';
+
+const teamAbbr = t => NL_ABBR[t.id] || t.name;
+const isNumeric = v => v != null && v !== '' && !isNaN(Number(v));
+const gbText = v => (v == null || v === '-' ? '—' : v);
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function pitcherERA(id, season) {
+  try {
+    const j = await getJSON(`https://statsapi.mlb.com/api/v1/people/${id}/stats?stats=season&group=pitching&season=${season}`);
+    return j.stats?.[0]?.splits?.[0]?.stat?.era || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function cubsSide(g) { return g.teams.home.team.id === CUBS_TEAM_ID ? 'home' : 'away'; }
+function oppSide(g) { return cubsSide(g) === 'home' ? 'away' : 'home'; }
+
+function broadcastLine(g) {
+  const side = cubsSide(g);
+  const list = (g.broadcasts || []).filter(b => (!b.language || b.language === 'en') && (b.isNational || b.homeAway === side));
+  const tv = [...new Set(list.filter(b => b.type === 'TV').map(b => b.name))];
+  const radio = [...new Set(list.filter(b => b.type === 'AM' || b.type === 'FM').map(b => b.name))];
+  const parts = [];
+  if (tv.length) parts.push('TV: ' + tv.join(', '));
+  if (radio.length) parts.push('Radio: ' + radio.join(', '));
+  return parts.join(' · ');
+}
+
+function seriesLine(g) {
+  if (!g || !g.seriesStatus || !POSTSEASON_TYPES.includes(g.gameType)) return '';
+  const ss = g.seriesStatus;
+  return [ss.shortDescription || ss.description, ss.result].filter(Boolean).join(' · ');
+}
+
+function runnersText(ls) {
+  const off = ls.offense || {};
+  const on = [['first', '1st'], ['second', '2nd'], ['third', '3rd']].filter(([k]) => off[k]).map(([, label]) => label);
+  return on.length ? 'Runners on ' + on.join(', ') : 'Bases empty';
+}
+
+function wildCardRows(allNL) {
+  let teams = allNL.filter(tr => isNumeric(tr.wildCardRank));
+  if (teams.length) {
+    teams.sort((a, b) => Number(a.wildCardRank) - Number(b.wildCardRank));
+  } else {
+    // fallback: non-division-leaders by winning percentage
+    teams = allNL.filter(tr => String(tr.divisionRank) !== '1')
+      .sort((a, b) => Number(b.winningPercentage) - Number(a.winningPercentage));
+  }
+  const third = teams[2];
+  const gb = tr => {
+    if (tr.wildCardGamesBack != null) return gbText(tr.wildCardGamesBack);
+    if (!third) return '—';
+    const v = ((third.wins - tr.wins) + (tr.losses - third.losses)) / 2;
+    return v === 0 ? '—' : (v > 0 ? v.toFixed(1) : '+' + (-v).toFixed(1));
+  };
+  let shown = teams.slice(0, 6);
+  const cubs = teams.find(tr => tr.team.id === CUBS_TEAM_ID);
+  if (cubs && !shown.includes(cubs)) shown.push(cubs);
+  return shown.map((tr, i) => {
+    const classes = [tr.team.id === CUBS_TEAM_ID ? 'is-cubs' : '', i === 2 ? 'wc-cut' : ''].filter(Boolean).join(' ');
+    return `<tr class="${classes}"><td>${teamAbbr(tr.team)}</td><td>${tr.wins}-${tr.losses}</td><td>${gb(tr)}</td></tr>`;
+  }).join('');
+}
 
 async function loadCubs() {
   try {
@@ -1101,69 +1189,123 @@ async function loadCubs() {
     const end = new Date(today); end.setDate(end.getDate() + 7);
     const fmt = d => d.toISOString().slice(0, 10);
 
-    const [scheduleRes, standingsRes] = await Promise.all([
-      fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${CUBS_TEAM_ID}&startDate=${fmt(start)}&endDate=${fmt(end)}`),
-      fetch(`https://statsapi.mlb.com/api/v1/standings?leagueId=104&standingsTypes=regularSeason&season=${today.getFullYear()}`)
+    const base = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${CUBS_TEAM_ID}&startDate=${fmt(start)}&endDate=${fmt(end)}`;
+    const [schedule, standings] = await Promise.all([
+      getJSON(base + '&hydrate=probablePitcher,decisions,linescore,broadcasts(all),seriesStatus').catch(() => getJSON(base)),
+      getJSON(`https://statsapi.mlb.com/api/v1/standings?leagueId=104&standingsTypes=regularSeason&season=${today.getFullYear()}`).catch(() => ({ records: [] }))
     ]);
-    const schedule = await scheduleRes.json();
-    const standings = await standingsRes.json();
 
-    // flatten all games from schedule dates
     let games = [];
     (schedule.dates || []).forEach(d => games.push(...d.games));
     games.sort((a, b) => new Date(a.gameDate) - new Date(b.gameDate));
 
     const now = Date.now();
-    const past = games.filter(g => new Date(g.gameDate).getTime() <= now && g.status.abstractGameState === 'Final');
-    const future = games.filter(g => new Date(g.gameDate).getTime() > now);
+    const past = games.filter(g => g.status.abstractGameState === 'Final' && g.teams.home.score != null);
+    const live = games.find(g => g.status.abstractGameState === 'Live');
+    const future = games.filter(g => g.status.abstractGameState === 'Preview' && new Date(g.gameDate).getTime() > now - 12 * 3600 * 1000);
     const last = past[past.length - 1];
-    const next = future[0];
+    const next = future.find(g => g !== live);
 
+    let flagHTML = '';
     let gamesHTML = '';
+
+    // Postseason series status
+    const seriesGame = live || (next && POSTSEASON_TYPES.includes(next.gameType) ? next : null) || last;
+    const series = seriesLine(seriesGame);
+    const seriesHTML = series ? `<div class="cubs-series">${series}</div>` : '';
+
+    if (live) {
+      const ls = live.linescore || {};
+      const cs = ls.teams?.[cubsSide(live)]?.runs ?? live.teams[cubsSide(live)].score ?? 0;
+      const os = ls.teams?.[oppSide(live)]?.runs ?? live.teams[oppSide(live)].score ?? 0;
+      const opp = live.teams[oppSide(live)].team.name;
+      const inning = ls.currentInningOrdinal ? `${ls.inningState || ''} ${ls.currentInningOrdinal}`.trim() : live.status.detailedState;
+      const midBreak = /Middle|End/.test(ls.inningState || '');
+      gamesHTML += `<div class="cubs-game"><b>Live</b><br>
+        <span class="cubs-score">${cs}–${os}</span> ${cubsSide(live) === 'home' ? 'vs' : '@'} ${opp}<br>
+        ${inning}${ls.outs != null && !midBreak ? ` · ${ls.outs} out` : ''}
+        ${!midBreak && ls.offense ? `<div class="cubs-sub">${runnersText(ls)}</div>` : ''}
+        <div class="cubs-sub">Updates when you reload</div></div>`;
+    }
+
     if (last) {
-      const home = last.teams.home, away = last.teams.away;
-      const cubsHome = home.team.id === CUBS_TEAM_ID;
-      const cubsScore = cubsHome ? home.score : away.score;
-      const oppScore = cubsHome ? away.score : home.score;
-      const opp = cubsHome ? away.team.name : home.team.name;
-      const result = cubsScore > oppScore ? 'W' : (cubsScore < oppScore ? 'L' : 'T');
+      const cs = last.teams[cubsSide(last)].score;
+      const os = last.teams[oppSide(last)].score;
+      const opp = last.teams[oppSide(last)].team.name;
+      const result = cs > os ? 'W' : (cs < os ? 'L' : 'T');
+      if (!live && result !== 'T') {
+        flagHTML = `<div class="cubs-flag cubs-flag-${result.toLowerCase()}" title="${result === 'W' ? 'Cubs won' : 'Cubs lost'}">${result}</div>`;
+      }
+      const d = last.decisions || {};
+      const dec = [d.winner && `W: ${d.winner.fullName}`, d.loser && `L: ${d.loser.fullName}`, d.save && `S: ${d.save.fullName}`].filter(Boolean).join(' · ');
       gamesHTML += `<div class="cubs-game"><b>Last game</b><br>
-        <span class="cubs-score">${result} ${cubsScore}–${oppScore}</span> vs ${opp}<br>
-        ${new Date(last.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>`;
+        <span class="cubs-score">${result} ${cs}–${os}</span> ${cubsSide(last) === 'home' ? 'vs' : '@'} ${opp}<br>
+        ${new Date(last.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        ${dec ? `<div class="cubs-sub">${dec}</div>` : ''}</div>`;
     }
+
     if (next) {
-      const home = next.teams.home, away = next.teams.away;
-      const cubsHome = home.team.id === CUBS_TEAM_ID;
-      const opp = cubsHome ? away.team.name : home.team.name;
+      const opp = next.teams[oppSide(next)].team.name;
+      const cubsP = next.teams[cubsSide(next)].probablePitcher;
+      const oppP = next.teams[oppSide(next)].probablePitcher;
+      const [cubsERA, oppERA] = await Promise.all([
+        cubsP ? pitcherERA(cubsP.id, next.season) : null,
+        oppP ? pitcherERA(oppP.id, next.season) : null
+      ]);
+      const pName = (p, era) => p ? `${p.fullName}${era ? ` (${era} ERA)` : ''}` : 'TBD';
+      const pitchers = (cubsP || oppP) ? `${pName(cubsP, cubsERA)} vs ${pName(oppP, oppERA)}` : '';
+      const bc = broadcastLine(next);
       gamesHTML += `<div class="cubs-game"><b>Next game</b><br>
-        ${cubsHome ? 'vs' : '@'} ${opp}<br>
-        ${new Date(next.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>`;
+        ${cubsSide(next) === 'home' ? 'vs' : '@'} ${opp}<br>
+        ${new Date(next.gameDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+        ${pitchers ? `<div class="cubs-sub">${pitchers}</div>` : ''}
+        ${bc ? `<div class="cubs-sub">${bc}</div>` : ''}</div>`;
     }
 
-    // NL Central standings
-    let standingsHTML = '';
-    const division = (standings.records || []).find(r => r.division.id === NL_CENTRAL_DIVISION_ID);
-    if (division) {
-      const rows = division.teamRecords
-        .slice()
-        .sort((a, b) => a.divisionRank - b.divisionRank)
-        .map(tr => {
-          const isCubs = tr.team.id === CUBS_TEAM_ID;
-          return `<tr class="${isCubs ? 'is-cubs' : ''}">
-            <td>${tr.team.name.replace('St. Louis', 'STL').replace('Milwaukee', 'MIL').replace('Cincinnati', 'CIN').replace('Pittsburgh', 'PIT').replace('Chicago Cubs', 'CHC')}</td>
-            <td>${tr.wins}-${tr.losses}</td>
-            <td>${tr.divisionGamesBack === '-' ? '—' : tr.divisionGamesBack}</td>
-          </tr>`;
-        }).join('');
-      standingsHTML = `
-        <table id="cubs-standings">
-          <thead><tr><th>Team</th><th>W-L</th><th>GB</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `;
+    // Standings-derived pieces
+    const allNL = (standings.records || []).flatMap(r => (r.teamRecords || []).map(tr => ({ ...tr, divisionId: r.division?.id })));
+    let seasonHTML = '';
+    const cubsRec = allNL.find(tr => tr.team.id === CUBS_TEAM_ID);
+    if (cubsRec) {
+      const parts = [];
+      if (cubsRec.streak?.streakCode) parts.push(`Streak ${cubsRec.streak.streakCode}`);
+      const l10 = cubsRec.records?.splitRecords?.find(r => r.type === 'lastTen');
+      if (l10) parts.push(`Last 10: ${l10.wins}-${l10.losses}`);
+      if (cubsRec.clinched) {
+        parts.push(CLINCH_TEXT[cubsRec.clinchIndicator] || 'Clinched');
+      } else {
+        if (isNumeric(cubsRec.magicNumber)) parts.push(`Magic # ${cubsRec.magicNumber}`);
+        if (isNumeric(cubsRec.eliminationNumber)) parts.push(`Division elim # ${cubsRec.eliminationNumber}`);
+        if (isNumeric(cubsRec.wildCardEliminationNumber)) parts.push(`Wild card elim # ${cubsRec.wildCardEliminationNumber}`);
+      }
+      seasonHTML = `<div class="cubs-game"><b>Season</b><br>
+        <span class="cubs-score">${cubsRec.wins}-${cubsRec.losses}</span>
+        ${parts.length ? `<div class="cubs-sub">${parts.join('<br>')}</div>` : ''}</div>`;
     }
 
-    cubsWidgetHTML = (gamesHTML + standingsHTML) || '<span class="err-msg">No Cubs data available right now</span>';
+    let divisionHTML = '';
+    const divTeams = allNL.filter(tr => tr.divisionId === NL_CENTRAL_DIVISION_ID)
+      .sort((a, b) => Number(a.divisionRank) - Number(b.divisionRank));
+    if (divTeams.length) {
+      const rows = divTeams.map(tr => `<tr class="${tr.team.id === CUBS_TEAM_ID ? 'is-cubs' : ''}">
+          <td>${teamAbbr(tr.team)}</td><td>${tr.wins}-${tr.losses}</td><td>${gbText(tr.divisionGamesBack)}</td></tr>`).join('');
+      divisionHTML = `<table class="cubs-table">
+          <thead><tr><th>NL Central</th><th>W-L</th><th>GB</th></tr></thead>
+          <tbody>${rows}</tbody></table>`;
+    }
+
+    let wildCardHTML = '';
+    if (allNL.length) {
+      const rows = wildCardRows(allNL);
+      if (rows) {
+        wildCardHTML = `<table class="cubs-table">
+          <thead><tr><th>NL Wild Card</th><th>W-L</th><th>GB</th></tr></thead>
+          <tbody>${rows}</tbody></table>`;
+      }
+    }
+
+    const body = seriesHTML + flagHTML + gamesHTML + seasonHTML + divisionHTML + wildCardHTML;
+    cubsWidgetHTML = body || '<span class="err-msg">No Cubs data available right now</span>';
   } catch (e) {
     cubsWidgetHTML = '<span class="err-msg">Cubs data unavailable</span>';
   }
