@@ -69,6 +69,7 @@ a{color:var(--mute)}
     <div><label for="model">Model</label><select id="model"></select></div>
     <div><label>Units</label><div class="seg" id="units"><button data-v="inch">in</button><button data-v="mm">mm</button></div></div>
     <div><label>Days run</label><div class="seg" id="tz"><button data-v="auto">Local midnight</button><button data-v="GMT">00z–00z</button></div></div>
+    <div><label>Order</label><div class="seg" id="sort"><button data-v="wet">Wettest first</button><button data-v="num">Member #</button></div></div>
   </div>
   <div class="picks" id="picks"></div>
 </div></header>
@@ -100,8 +101,8 @@ const HOME={name:"90032 · Los Angeles, CA",lat:34.0818,lon:-118.1753};
 const SCALE=[[0.01,"#e6e6e6"],[0.03,"#cfcfcf"],[0.05,"#b0b0b0"],[0.08,"#8f8f8f"],[0.1,"#c6f0bd"],[0.15,"#95e185"],[0.2,"#5ccb4f"],[0.3,"#2aa837"],[0.4,"#11812a"],[0.5,"#a6d0f4"],[0.6,"#69aeec"],[0.75,"#3784d6"],[0.9,"#1d58b4"],[1,"#ffe57a"],[1.25,"#ffc03a"],[1.5,"#ff8e1f"],[2,"#ee4c22"],[2.5,"#c61d1d"],[3,"#8a1b3e"],[4,"#a64ca6"],[5,"#cf7fd7"],[7,"#f2b2ef"]];
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem("ensrain."+k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem("ensrain."+k,JSON.stringify(v))}catch(e){}}};
-let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),recent:store.get("recent",[HOME])};
-let req=0;
+let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),sort:store.get("sort","wet"),recent:store.get("recent",[HOME])};
+let req=0,last=null;
 
 $("model").innerHTML=MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
 const colorFor=inch=>{let c=null;for(const [t,col] of SCALE)if(inch>=t-1e-9)c=col;return c};
@@ -116,6 +117,7 @@ function syncControls(){
   $("model").value=S.model;
   for(const b of $("units").children)b.setAttribute("aria-pressed",b.dataset.v===S.unit);
   for(const b of $("tz").children)b.setAttribute("aria-pressed",b.dataset.v===S.tz);
+  for(const b of $("sort").children)b.setAttribute("aria-pressed",b.dataset.v===S.sort);
   $("picks").innerHTML=S.recent.map((p,i)=>`<button type="button" data-i="${i}" class="${p.lat===S.place.lat&&p.lon===S.place.lon?"on":""}">${esc(p.name)}</button>`).join("");
 }
 
@@ -137,6 +139,7 @@ async function load(){
 }
 
 function render(j){
+  last=j;
   const h=j.hourly,keys=Object.keys(h).filter(k=>/^precipitation(_member\d+)?$/.test(k));
   keys.sort((a,b)=>(+(a.match(/\d+$/)||[0])[0])-(+(b.match(/\d+$/)||[0])[0]));
   // hourly value at time t is the total for the hour ending at t, so it belongs to the day of t-1h
@@ -154,7 +157,8 @@ function render(j){
   const dl=d=>{const x=new Date(d+"T12:00:00Z");return [x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"}),x.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})]};
   const cell=v=>{if(v===null)return "<td></td>";const c=colorFor(toIn(v));if(!c)return "<td></td>";const show=toIn(v)>=0.05;return `<td style="background:${c};color:${darkText(c)?"#111":"#fff"}" title="${fmt(v)} ${uLabel()}">${show?fmt(v):""}</td>`};
   const head=`<thead><tr><th></th>${D.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>${D.length} days</small></th></tr></thead>`;
-  const body="<tbody>"+R.map((r,i)=>`<tr class="${i?"":"ctrl"}"><th>${i?"e"+String(i).padStart(2,"0"):"CONT"}</th>${r.map(cell).join("")}${cell(tot[i]).replace("<td","<td class=\"tot\"")}</tr>`).join("")+"</tbody>";
+  const order=R.map((r,i)=>i);if(S.sort==="wet")order.sort((a,b)=>tot[b]-tot[a]||a-b);
+  const body="<tbody>"+order.map(i=>[R[i],i]).map(([r,i])=>`<tr class="${i?"":"ctrl"}"><th>${i?"e"+String(i).padStart(2,"0"):"CONT"}</th>${r.map(cell).join("")}${cell(tot[i]).replace("<td","<td class=\"tot\"")}</tr>`).join("")+"</tbody>";
   const foot=`<tfoot><tr><th>Mean</th>${mean.map(cell).join("")}${cell(meanTot).replace("<td","<td class=\"tot\"")}</tr><tr><th>% wet</th>${pct.map(p=>`<td>${p}</td>`).join("")}<td class="tot"></td></tr></tfoot>`;
   $("grid").innerHTML=head+body+foot;
   // one-line finding
@@ -199,6 +203,7 @@ async function search(q){
 $("f").addEventListener("submit",e=>{e.preventDefault();search($("q").value)});
 $("model").addEventListener("change",e=>{S.model=e.target.value;store.set("model",S.model);load()});
 $("units").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.unit)return;S.unit=v;store.set("unit",v);syncControls();legend();load()});
+$("sort").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.sort)return;S.sort=v;store.set("sort",v);syncControls();if(last)render(last)});
 $("tz").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.tz)return;S.tz=v;store.set("tz",v);syncControls();load()});
 $("picks").addEventListener("click",e=>{const b=e.target.closest("[data-i]");if(b)setPlace(S.recent[+b.dataset.i])});
 
