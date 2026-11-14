@@ -536,6 +536,100 @@
   .cubs-table td { padding: 2px 10px 2px 0; color: var(--muted); }
   .cubs-table tr.is-cubs td { color: var(--accent); font-weight: 700; }
   .cubs-table tr.wc-cut td { border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+  /* ---- Phone layout (also iPhone Duo, both displays). Desktop is untouched. ---- */
+  @media (max-width: 700px), (max-width: 950px) and (pointer: coarse) {
+    header { padding: 14px 14px 10px; }
+    #shuffle-ctrl { font-size: 13px; }
+
+    #widgets-row {
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      gap: 10px;
+      padding: 12px 14px 0;
+      align-items: start;
+    }
+    #widgets-row .widget-box:last-child { grid-column: 1 / -1; }
+    .widget-box { padding: 10px 12px; }
+    .widget-title { font-size: 11.5px; }
+    #weather-details { font-size: 13px; }
+    .wx-day { font-size: 12px; }
+    .wx-day-label { font-size: 11px; }
+    .wx-day-hilo { font-size: 11.5px; }
+    .wx-more { font-size: 13px; padding: 10px 0 4px; }
+    .wx-alert, .wx-alert-desc { font-size: 12.5px; }
+    .surf-stat { font-size: 13px; }
+    .forecast-day { font-size: 12.5px; }
+    .forecast-day .fd-label { font-size: 11px; }
+    #surf-spot-select { min-height: 38px; font-size: 16px; }
+
+    /* Sidebar becomes a sticky chip row plus a collapsed Sources section */
+    #layout { display: block; }
+    #sidebar { display: contents; }
+    #cat-heading { display: none; }
+    #cat-list {
+      position: sticky; top: 0; z-index: 6;
+      display: flex; gap: 8px;
+      overflow-x: auto;
+      margin-top: 12px;
+      padding: 8px 14px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      scrollbar-width: none;
+    }
+    #cat-list::-webkit-scrollbar { display: none; }
+    #cat-list > * { flex: none; }
+    .drag-handle { display: none; }
+    #cat-list .cat-btn {
+      width: auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    #cat-list .cat-btn.active { border-color: var(--accent); background: var(--panel-raised); }
+
+    #src-toggle {
+      display: flex; justify-content: space-between; align-items: center;
+      margin: 0; padding: 0 14px;
+      min-height: 44px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    #src-toggle::after { content: "Show ▾"; }
+    body.src-open #src-toggle::after { content: "Hide ▴"; }
+    #source-list, #legend { display: none; }
+    body.src-open #source-list { display: block; padding: 6px 14px; }
+    body.src-open #legend {
+      display: block; margin: 0; padding: 10px 14px;
+      border-top: none; border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .source-row { min-height: 40px; font-size: 14px; }
+    .source-row input { width: 18px; height: 18px; }
+
+    #feed { padding: 16px 14px 60px; }
+    .card-body { padding: 12px 14px; }
+    .card-meta { font-size: 11.5px; }
+    .card-title { font-size: 16px; }
+    .card-snippet { font-size: 13.5px; }
+    .card-time { font-size: 12px; }
+
+    #radar-modal-inner { width: 96vw; height: min(80dvh, 700px); }
+    #radar-modal-close { width: 40px; height: 40px; font-size: 16px; }
+  }
+  /* Wider phone screens (Duo inner display): stop the radar square from growing with the screen */
+  @media (min-width: 520px) and (max-width: 700px), (min-width: 520px) and (max-width: 950px) and (pointer: coarse) {
+    #widgets-row { grid-template-columns: minmax(0, 1fr) 200px; }
+  }
+  @media (min-width: 760px) and (max-width: 950px) and (pointer: coarse) {
+    #widgets-row { grid-template-columns: 240px 200px minmax(0, 1fr); }
+    #widgets-row .widget-box:last-child { grid-column: auto; }
+  }
 </style>
 </head>
 <body>
@@ -585,10 +679,10 @@
 
 <div id="layout">
   <aside id="sidebar">
-    <div class="side-heading">Categories</div>
+    <div class="side-heading" id="cat-heading">Categories</div>
     <div id="cat-list"></div>
 
-    <div class="side-heading">Sources</div>
+    <div class="side-heading" id="src-toggle">Sources</div>
     <div id="source-list"></div>
 
     <div id="legend">
@@ -688,6 +782,7 @@ let loadedCount = 0;
 
 function buildSidebar() {
   const catList = document.getElementById('cat-list');
+  const catScroll = catList.scrollLeft; // phone: keep the chip row where it was scrolled
   catList.innerHTML = '';
 
   const allBtn = document.createElement('button');
@@ -701,7 +796,7 @@ function buildSidebar() {
   catOrder.forEach((cat, idx) => {
     const row = document.createElement('div');
     row.className = 'cat-row';
-    row.draggable = true;
+    row.draggable = !matchMedia('(pointer: coarse)').matches; // no drag-reorder on touch
     row.dataset.idx = idx;
 
     const handle = document.createElement('span');
@@ -745,6 +840,7 @@ function buildSidebar() {
     catList.appendChild(row);
   });
 
+  catList.scrollLeft = catScroll;
   const srcList = document.getElementById('source-list');
   srcList.innerHTML = '';
   SOURCES.forEach(s => {
@@ -1474,6 +1570,7 @@ function init() {
   renderFeed();
   SOURCES.forEach(s => loadSource(s));
   loadWeather();
+  document.getElementById('src-toggle').addEventListener('click', () => document.body.classList.toggle('src-open')); // only has an effect in the phone layout
   loadCubs();
   initSurfDropdown();
   initRadarModal();
