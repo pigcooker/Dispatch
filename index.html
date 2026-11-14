@@ -461,6 +461,18 @@
   .wx-day-hilo { font-size: 10px; margin-top: 2px; }
   .wx-day-hilo b { color: var(--text); font-weight: 700; }
 
+  .wx-more {
+    display: block;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-size: 10.5px;
+    color: var(--faint);
+    text-decoration: none;
+    text-align: right;
+  }
+  .wx-more:hover { color: var(--accent); }
+
   #weather-alerts { display: flex; flex-direction: column; gap: 4px; }
   .wx-alert {
     display: flex;
@@ -546,6 +558,7 @@
   <div class="widget-box">
     <div class="widget-title">Weather · 90032</div>
     <div id="weather-body">Loading…</div>
+    <a class="wx-more" href="rain.html">Ensemble rain table →</a>
   </div>
   <div class="widget-box" id="radar-box" title="Click to expand">
     <div class="widget-title">Radar</div>

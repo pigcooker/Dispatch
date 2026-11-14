@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="googlebot" content="noindex, nofollow">
+<title>Ensemble Rain — Dispatch</title>
+<style>
+/* Matches Dispatch tokens (index.html :root). Rain scale colours are the only other colour. */
+:root{--bg:#12151a;--panel:#1a1e26;--panel-raised:#20252f;--line:#2a2f3a;--ink:#e8e6df;--mute:#8b91a0;--faint:#565d6d;--accent:#e0a458;--err:#c1665a}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:clip}
+::selection{background:var(--accent);color:#12151a}
+.band{padding:22px 28px}
+.wrap{max-width:1240px;margin:0 auto}
+header{border-bottom:1px solid var(--line)}
+.back{font-size:12px;color:var(--faint);text-decoration:none}
+.back:hover{color:var(--accent)}
+h1{font-size:22px;font-weight:800;letter-spacing:.02em;margin:6px 0 4px;text-wrap:balance}
+.sub{color:var(--faint);font-size:12px;margin:0}
+.ctl{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end;margin-top:16px}
+.ctl label{display:block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;margin-bottom:5px}
+input,select,button{font:inherit;font-size:14px;color:var(--ink)}
+input,select{height:38px;border:1px solid var(--line);background:var(--panel-raised);padding:0 10px;border-radius:6px}
+#q{width:min(320px,100%)}
+form{display:flex;gap:6px}
+button{height:38px;padding:0 14px;border:1px solid var(--accent);background:var(--accent);color:#12151a;border-radius:6px;cursor:pointer;font-weight:700}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{background:var(--panel-raised);color:var(--mute);border:0;border-radius:0;font-weight:500;padding:0 12px}
+.seg button[aria-pressed=true]{background:var(--accent);color:#12151a;font-weight:700}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.picks{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.picks button{height:30px;font-size:12px;background:var(--panel);color:var(--mute);border:1px solid var(--line);font-weight:500}
+.picks button.on{border-color:var(--accent);color:var(--ink)}
+.find{font-size:15px;margin:0 0 12px;color:var(--mute)}
+.find b{color:var(--ink);font-weight:700}
+.msg{padding:12px 0;color:var(--mute);font-size:14px}.msg.err{color:var(--err)}
+.scroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px}
+table{border-collapse:separate;border-spacing:1px;font-size:11.5px;font-variant-numeric:tabular-nums;width:100%}
+th,td{padding:0;text-align:center;white-space:nowrap}
+thead th{font-weight:700;font-size:11px;padding:4px 2px 6px;line-height:1.2;color:var(--mute);background:var(--panel)}
+thead th small{display:block;font-weight:400;color:var(--faint)}
+tbody th,tfoot th{position:sticky;left:0;background:var(--panel);font-weight:400;color:var(--faint);text-align:left;padding:0 8px 0 2px;z-index:1}
+td{height:19px;min-width:40px;background:var(--panel-raised)}
+td.tot{font-weight:700;border-left:2px solid var(--line)}
+tr.ctrl th{color:var(--ink);font-weight:700}
+tfoot th,tfoot td{font-weight:700;height:24px}
+tfoot th{color:var(--mute)}
+tfoot tr:first-child>*{border-top:2px solid var(--line)}
+tfoot td{background:transparent}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:12px;font-size:11px;color:var(--faint)}
+.legend span{display:inline-flex;align-items:end;justify-content:center;width:34px;height:28px;padding-bottom:2px;font-variant-numeric:tabular-nums;border-radius:2px}
+.legend em{font-style:normal;margin-right:8px}
+.notes{font-size:12px;color:var(--faint);max-width:760px}
+.notes p{margin:6px 0}
+a{color:var(--mute)}
+@media(max-width:600px){.band{padding:18px 14px}.ctl>div{width:100%}#q{flex:1}td{min-width:34px}}
+</style>
+</head>
+<body>
+<header class="band"><div class="wrap">
+  <a class="back" href="./">← Dispatch</a>
+  <h1 id="title">Ensemble rainfall</h1>
+  <p class="sub" id="sub">Loading…</p>
+  <div class="ctl">
+    <div><label for="q">Place: city, ZIP, or lat, lon</label>
+      <form id="f"><input id="q" autocomplete="off" placeholder="e.g. Pasadena, 90266, or 33.74, -118.41"><button type="submit">Find</button></form></div>
+    <div><label for="model">Model</label><select id="model"></select></div>
+    <div><label>Units</label><div class="seg" id="units"><button data-v="inch">in</button><button data-v="mm">mm</button></div></div>
+    <div><label>Days run</label><div class="seg" id="tz"><button data-v="auto">Local midnight</button><button data-v="GMT">00z–00z</button></div></div>
+  </div>
+  <div class="picks" id="picks"></div>
+</div></header>
+
+<main class="band" style="padding-top:0"><div class="wrap">
+  <p class="find" id="find"></p>
+  <div id="msg" class="msg" hidden></div>
+  <div class="scroll"><table id="grid"></table></div>
+  <div class="legend" id="legend"></div>
+</div></main>
+
+<footer class="band" style="padding-top:0"><div class="wrap notes">
+  <p>Each row is one ensemble member's forecast for 24-hour rainfall at the nearest model grid point. CONT is the unperturbed control run. The bottom rows give the member mean and the share of members with at least 0.01 in (0.25 mm). Only complete days are shown.</p>
+  <p>Data: <a href="https://open-meteo.com/en/docs/ensemble-api">Open-Meteo Ensemble API</a>, free for non-commercial use. ZIP lookup: <a href="https://zippopotam.us">Zippopotam.us</a>. Place search: Open-Meteo Geocoding.</p>
+</div></footer>
+
+<script>
+{
+const MODELS=[
+  ["ecmwf_ifs025","ECMWF IFS ENS 0.25° · 51 members"],
+  ["ecmwf_aifs025","ECMWF AIFS ENS (AI) · 51 members"],
+  ["gfs_seamless","NOAA GEFS · 31 members"],
+  ["gem_global","Canada GEM GEPS · 21 members"],
+  ["icon_seamless","DWD ICON-EPS · 40 members, 7 days"],
+  ["ukmo_global_ensemble_20km","UK Met Office MOGREPS-G · 18 members"]
+];
+const HOME={name:"90032 · Los Angeles, CA",lat:34.0818,lon:-118.1753};
+// rain scale in inches: [lower bound, colour]
+const SCALE=[[0.01,"#e6e6e6"],[0.03,"#cfcfcf"],[0.05,"#b0b0b0"],[0.08,"#8f8f8f"],[0.1,"#c6f0bd"],[0.15,"#95e185"],[0.2,"#5ccb4f"],[0.3,"#2aa837"],[0.4,"#11812a"],[0.5,"#a6d0f4"],[0.6,"#69aeec"],[0.75,"#3784d6"],[0.9,"#1d58b4"],[1,"#ffe57a"],[1.25,"#ffc03a"],[1.5,"#ff8e1f"],[2,"#ee4c22"],[2.5,"#c61d1d"],[3,"#8a1b3e"],[4,"#a64ca6"],[5,"#cf7fd7"],[7,"#f2b2ef"]];
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{const v=localStorage.getItem("ensrain."+k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem("ensrain."+k,JSON.stringify(v))}catch(e){}}};
+let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),recent:store.get("recent",[HOME])};
+let req=0;
+
+$("model").innerHTML=MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+const colorFor=inch=>{let c=null;for(const [t,col] of SCALE)if(inch>=t-1e-9)c=col;return c};
+const darkText=hex=>{const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return (0.299*r+0.587*g+0.114*b)>150};
+const toIn=v=>S.unit==="mm"?v/25.4:v;
+const fmt=v=>{if(S.unit==="mm")return v<10?v.toFixed(1):Math.round(v)+"";if(v>=1)return v.toFixed(1);return v.toFixed(2).replace(/^0/,"")};
+const uLabel=()=>S.unit==="mm"?"mm":"in";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const msg=(t,err)=>{const m=$("msg");m.hidden=!t;m.textContent=t||"";m.className="msg"+(err?" err":"")};
+
+function syncControls(){
+  $("model").value=S.model;
+  for(const b of $("units").children)b.setAttribute("aria-pressed",b.dataset.v===S.unit);
+  for(const b of $("tz").children)b.setAttribute("aria-pressed",b.dataset.v===S.tz);
+  $("picks").innerHTML=S.recent.map((p,i)=>`<button type="button" data-i="${i}" class="${p.lat===S.place.lat&&p.lon===S.place.lon?"on":""}">${esc(p.name)}</button>`).join("");
+}
+
+function legend(){
+  const vals=SCALE.map(([t,c])=>[S.unit==="mm"?+(t*25.4).toFixed(t<0.1?1:0):t,c]);
+  $("legend").innerHTML=`<em>${uLabel()}</em>`+vals.map(([v,c])=>`<span style="background:${c};color:${darkText(c)?"#111":"#fff"}">${v}</span>`).join("");
+}
+
+async function load(){
+  const id=++req,p=S.place;
+  $("title").textContent=p.name;
+  $("sub").textContent="Loading forecast…";msg("");
+  const url=`https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${p.lat}&longitude=${p.lon}&hourly=precipitation&models=${S.model}&forecast_days=16&timezone=${S.tz}&precipitation_unit=${S.unit}`;
+  let j;
+  try{const r=await fetch(url);j=await r.json();if(j.error)throw new Error(j.reason)}
+  catch(e){if(id===req){msg("Could not load the forecast: "+e.message,true);$("sub").textContent=""}return}
+  if(id!==req)return;
+  render(j);
+}
+
+function render(j){
+  const h=j.hourly,keys=Object.keys(h).filter(k=>/^precipitation(_member\d+)?$/.test(k));
+  keys.sort((a,b)=>(+(a.match(/\d+$/)||[0])[0])-(+(b.match(/\d+$/)||[0])[0]));
+  // hourly value at time t is the total for the hour ending at t, so it belongs to the day of t-1h
+  const dayOf=h.time.map(t=>{const [d,c]=t.split("T"),[y,m,dd]=d.split("-").map(Number),[hh,mi]=c.split(":").map(Number);return new Date(Date.UTC(y,m-1,dd,hh,mi)-3600e3).toISOString().slice(0,10)});
+  const days=[...new Set(dayOf)];
+  const rows=keys.map(k=>days.map(d=>{let s=0,n=0;h[k].forEach((v,i)=>{if(dayOf[i]===d&&v!==null){s+=v;n++}});return n>=24?s:null}));
+  const full=days.map((d,i)=>rows.some(r=>r[i]!==null));
+  const D=days.filter((d,i)=>full[i]),R=rows.map(r=>r.filter((v,i)=>full[i]));
+  if(!D.length){msg("This model returned no complete days for this place.",true);$("grid").innerHTML="";$("find").textContent="";return}
+  const mean=D.map((d,i)=>{const v=R.map(r=>r[i]).filter(x=>x!==null);return v.reduce((a,b)=>a+b,0)/v.length});
+  const wet=S.unit==="mm"?0.25:0.01;
+  const pct=D.map((d,i)=>{const v=R.map(r=>r[i]).filter(x=>x!==null);return Math.round(100*v.filter(x=>x>=wet).length/v.length)});
+  const tot=R.map(r=>r.reduce((a,b)=>a+(b||0),0));
+  const meanTot=tot.reduce((a,b)=>a+b,0)/tot.length;
+  const dl=d=>{const x=new Date(d+"T12:00:00Z");return [x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"}),x.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})]};
+  const cell=v=>{if(v===null)return "<td></td>";const c=colorFor(toIn(v));if(!c)return "<td></td>";const show=toIn(v)>=0.05;return `<td style="background:${c};color:${darkText(c)?"#111":"#fff"}" title="${fmt(v)} ${uLabel()}">${show?fmt(v):""}</td>`};
+  const head=`<thead><tr><th></th>${D.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>${D.length} days</small></th></tr></thead>`;
+  const body="<tbody>"+R.map((r,i)=>`<tr class="${i?"":"ctrl"}"><th>${i?"e"+String(i).padStart(2,"0"):"CONT"}</th>${r.map(cell).join("")}${cell(tot[i]).replace("<td","<td class=\"tot\"")}</tr>`).join("")+"</tbody>";
+  const foot=`<tfoot><tr><th>Mean</th>${mean.map(cell).join("")}${cell(meanTot).replace("<td","<td class=\"tot\"")}</tr><tr><th>% wet</th>${pct.map(p=>`<td>${p}</td>`).join("")}<td class="tot"></td></tr></tfoot>`;
+  $("grid").innerHTML=head+body+foot;
+  // one-line finding
+  let bi=0;mean.forEach((m,i)=>{if(m>mean[bi])bi=i});
+  const [w,md]=dl(D[bi]);
+  $("find").innerHTML=mean[bi]<(S.unit==="mm"?0.25:0.01)
+    ? `Dry: no day has a member-mean above ${S.unit==="mm"?"0.25 mm":"0.01 in"} through ${dl(D[D.length-1]).join(" ")}.`
+    : `Wettest day: <b>${w} ${md}</b>, mean ${fmt(mean[bi])} ${uLabel()}, ${pct[bi]}% of members wet. ${D.length}-day mean total ${fmt(meanTot)} ${uLabel()}.`;
+  const m=MODELS.find(x=>x[0]===S.model);
+  $("sub").textContent=`${m?m[1]:S.model} · grid point ${j.latitude.toFixed(2)}, ${j.longitude.toFixed(2)} · ${S.tz==="GMT"?"days 00z–00z":"days midnight–midnight "+j.timezone_abbreviation} · fetched ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
+}
+
+function setPlace(p){
+  S.place=p;
+  S.recent=[p,...S.recent.filter(x=>!(x.lat===p.lat&&x.lon===p.lon))].slice(0,8);
+  if(!S.recent.some(x=>x.lat===HOME.lat&&x.lon===HOME.lon))S.recent[S.recent.length-1]=HOME;
+  store.set("place",p);store.set("recent",S.recent);syncControls();load();
+}
+
+async function search(q){
+  q=q.trim();if(!q)return;
+  const ll=q.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
+  if(ll){const lat=+ll[1],lon=+ll[2];if(Math.abs(lat)<=90&&Math.abs(lon)<=180)return setPlace({name:`${lat.toFixed(3)}, ${lon.toFixed(3)}`,lat,lon});return msg("Latitude must be −90 to 90 and longitude −180 to 180.",true)}
+  msg("Searching…");
+  try{
+    if(/^\d{5}$/.test(q)){
+      const r=await fetch(`https://api.zippopotam.us/us/${q}`);if(!r.ok)throw new Error(`ZIP ${q} not found`);
+      const z=await r.json(),pl=z.places[0];msg("");
+      return setPlace({name:`${q} · ${pl["place name"]}, ${pl["state abbreviation"]}`,lat:+pl.latitude,lon:+pl.longitude});
+    }
+    const r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`);
+    const g=await r.json(),res=g.results||[];
+    if(!res.length)throw new Error(`No place called “${q}”. Try adding a state, or enter lat, lon.`);
+    const nm=x=>[x.name,x.admin1,x.country_code==="US"?"":x.country].filter(Boolean).join(", ");
+    if(res.length===1){msg("");return setPlace({name:nm(res[0]),lat:+res[0].latitude.toFixed(4),lon:+res[0].longitude.toFixed(4)})}
+    const m=$("msg");m.hidden=false;m.className="msg";
+    m.innerHTML="Which one? <div class='picks'>"+res.map((x,i)=>`<button type="button" data-g="${i}">${esc(nm(x))}</button>`).join("")+"</div>";
+    m.onclick=e=>{const b=e.target.closest("[data-g]");if(!b)return;const x=res[+b.dataset.g];msg("");setPlace({name:nm(x),lat:+x.latitude.toFixed(4),lon:+x.longitude.toFixed(4)})};
+  }catch(e){msg(e.message,true)}
+}
+
+$("f").addEventListener("submit",e=>{e.preventDefault();search($("q").value)});
+$("model").addEventListener("change",e=>{S.model=e.target.value;store.set("model",S.model);load()});
+$("units").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.unit)return;S.unit=v;store.set("unit",v);syncControls();legend();load()});
+$("tz").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.tz)return;S.tz=v;store.set("tz",v);syncControls();load()});
+$("picks").addEventListener("click",e=>{const b=e.target.closest("[data-i]");if(b)setPlace(S.recent[+b.dataset.i])});
+
+syncControls();legend();load();
+}
+</script>
+</body>
+</html>
