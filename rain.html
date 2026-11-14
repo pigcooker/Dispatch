@@ -49,6 +49,18 @@ tfoot th,tfoot td{font-weight:700;height:24px}
 tfoot th{color:var(--mute)}
 tfoot tr:first-child>*{border-top:2px solid var(--line)}
 tfoot td{background:transparent}
+th i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+th small{color:var(--faint);font-weight:400}
+td.nd{background:transparent}
+tbody.sum td{height:22px}
+tbody.sum th{color:var(--ink)}
+tr.pool>*{font-weight:700;border-top:2px solid var(--line)}
+tr.cnt td{background:transparent;color:var(--faint)}
+tr.cnt th{color:var(--faint)}
+tr.sec th{position:static;padding:16px 2px 6px;color:var(--mute);font-weight:700;font-size:11px;white-space:normal}
+tbody.strip td{height:6px}
+tbody.strip tr:not(.sec) th{padding:0 8px 0 2px;line-height:0}
+tbody.strip tr:not(.sec) th i{display:block;width:16px;height:6px;border-radius:0;margin:0}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:12px;font-size:11px;color:var(--faint)}
 .legend span{display:inline-flex;align-items:end;justify-content:center;width:34px;height:28px;padding-bottom:2px;font-variant-numeric:tabular-nums;border-radius:2px}
 .legend em{font-style:normal;margin-right:8px}
@@ -83,18 +95,19 @@ a{color:var(--mute)}
 
 <footer class="band" style="padding-top:0"><div class="wrap notes">
   <p>Each row is one ensemble member's forecast for 24-hour rainfall at the nearest model grid point. CONT is the unperturbed control run. The bottom rows give the member mean and the share of members with at least 0.01 in (0.25 mm). Only complete days are shown.</p>
+  <p>All models: each cell shows the percent of that model's members that are wet, coloured by the model's mean. The Pooled row averages the models with each model counting once, and uses only models whose run reaches that day. The Members row shows how many members that is. Totals cover only the days every model reaches, so they compare like with like.</p>
   <p>Data: <a href="https://open-meteo.com/en/docs/ensemble-api">Open-Meteo Ensemble API</a>, free for non-commercial use. ZIP lookup: <a href="https://zippopotam.us">Zippopotam.us</a>. Place search: Open-Meteo Geocoding.</p>
 </div></footer>
 
 <script>
 {
 const MODELS=[
-  ["ecmwf_ifs025","ECMWF IFS ENS 0.25° · 51 members"],
-  ["ecmwf_aifs025","ECMWF AIFS ENS (AI) · 51 members"],
-  ["gfs_seamless","NOAA GEFS · 31 members"],
-  ["gem_global","Canada GEM GEPS · 21 members"],
-  ["icon_seamless","DWD ICON-EPS · 40 members, 7 days"],
-  ["ukmo_global_ensemble_20km","UK Met Office MOGREPS-G · 18 members"]
+  ["ecmwf_ifs025","ECMWF IFS ENS 0.25° · 51 members","ECMWF IFS","#e0a458"],
+  ["ecmwf_aifs025","ECMWF AIFS ENS (AI) · 51 members","ECMWF AIFS","#c1665a"],
+  ["gfs_seamless","NOAA GEFS · 31 members","GEFS","#7aa2f7"],
+  ["gem_global","Canada GEM GEPS · 21 members","GEM","#6fae8f"],
+  ["icon_seamless","DWD ICON-EPS · 40 members, 7 days","ICON","#bb9af7"],
+  ["ukmo_global_ensemble_20km","UK Met Office MOGREPS-G · 18 members","UKMO","#e8e6df"]
 ];
 const HOME={name:"90032 · Los Angeles, CA",lat:34.0818,lon:-118.1753};
 // rain scale in inches: [lower bound, colour]
@@ -104,7 +117,7 @@ const store={get(k,d){try{const v=localStorage.getItem("ensrain."+k);return v?JS
 let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),sort:store.get("sort","wet"),recent:store.get("recent",[HOME])};
 let req=0,last=null;
 
-$("model").innerHTML=MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+$("model").innerHTML=MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("")+`<option value="all">All models · weighted equally</option>`;
 const colorFor=inch=>{let c=null;for(const [t,col] of SCALE)if(inch>=t-1e-9)c=col;return c};
 const darkText=hex=>{const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return (0.299*r+0.587*g+0.114*b)>150};
 const toIn=v=>S.unit==="mm"?v/25.4:v;
@@ -126,20 +139,37 @@ function legend(){
   $("legend").innerHTML=`<em>${uLabel()}</em>`+vals.map(([v,c])=>`<span style="background:${c};color:${darkText(c)?"#111":"#fff"}">${v}</span>`).join("");
 }
 
+const dl=d=>{const x=new Date(d+"T12:00:00Z");return [x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"}),x.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})]};
+const cell=v=>{if(v===null)return "<td></td>";const c=colorFor(toIn(v));if(!c)return "<td></td>";const show=toIn(v)>=0.05;return `<td style="background:${c};color:${darkText(c)?"#111":"#fff"}" title="${fmt(v)} ${uLabel()}">${show?fmt(v):""}</td>`};
+const stamp=()=>new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+
+async function fetchModel(model,p){
+  const r=await fetch(`https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${p.lat}&longitude=${p.lon}&hourly=precipitation&models=${model}&forecast_days=16&timezone=${S.tz}&precipitation_unit=${S.unit}`);
+  const j=await r.json();if(j.error)throw new Error(j.reason);return j;
+}
+
 async function load(){
   const id=++req,p=S.place;
   $("title").textContent=p.name;
   $("sub").textContent="Loading forecast…";msg("");
-  const url=`https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${p.lat}&longitude=${p.lon}&hourly=precipitation&models=${S.model}&forecast_days=16&timezone=${S.tz}&precipitation_unit=${S.unit}`;
+  if(S.model==="all"){
+    const rs=await Promise.allSettled(MODELS.map(m=>fetchModel(m[0],p)));
+    if(id!==req)return;
+    const all=[],bad=[];
+    rs.forEach((r,i)=>{const d=r.status==="fulfilled"?daily(r.value):null;
+      if(d&&d.D.length)all.push({m:MODELS[i],D:d.D,R:d.R,tz:r.value.timezone_abbreviation});else bad.push(MODELS[i][2])});
+    if(!all.length){msg("Could not load any model for this place.",true);$("sub").textContent="";return}
+    last={all,bad};renderAll(last);return;
+  }
   let j;
-  try{const r=await fetch(url);j=await r.json();if(j.error)throw new Error(j.reason)}
+  try{j=await fetchModel(S.model,p)}
   catch(e){if(id===req){msg("Could not load the forecast: "+e.message,true);$("sub").textContent=""}return}
   if(id!==req)return;
   render(j);
 }
 
-function render(j){
-  last=j;
+// member x day totals for one model response; only complete 24-hour days are kept
+function daily(j){
   const h=j.hourly,keys=Object.keys(h).filter(k=>/^precipitation(_member\d+)?$/.test(k));
   keys.sort((a,b)=>(+(a.match(/\d+$/)||[0])[0])-(+(b.match(/\d+$/)||[0])[0]));
   // hourly value at time t is the total for the hour ending at t, so it belongs to the day of t-1h
@@ -147,15 +177,50 @@ function render(j){
   const days=[...new Set(dayOf)];
   const rows=keys.map(k=>days.map(d=>{let s=0,n=0;h[k].forEach((v,i)=>{if(dayOf[i]===d&&v!==null){s+=v;n++}});return n>=24?s:null}));
   const full=days.map((d,i)=>rows.some(r=>r[i]!==null));
-  const D=days.filter((d,i)=>full[i]),R=rows.map(r=>r.filter((v,i)=>full[i]));
+  return {D:days.filter((d,i)=>full[i]),R:rows.map(r=>r.filter((v,i)=>full[i]))};
+}
+
+function renderAll({all,bad}){
+  const days=[...new Set(all.flatMap(a=>a.D))].sort(),wet=S.unit==="mm"?0.25:0.01,avg=v=>v.reduce((x,y)=>x+y,0)/v.length;
+  for(const a of all){
+    a.A=a.R.map(r=>days.map(d=>{const k=a.D.indexOf(d);return k<0?null:r[k]}));
+    a.st=days.map((d,i)=>{const v=a.A.map(r=>r[i]).filter(x=>x!==null);return v.length?{mean:avg(v),pct:100*v.filter(x=>x>=wet).length/v.length,n:v.length}:null});
+  }
+  // pooled: every model counts once, however many members it has
+  const pool=days.map((d,i)=>{const st=all.map(a=>a.st[i]).filter(Boolean);return {mean:avg(st.map(x=>x.mean)),pct:avg(st.map(x=>x.pct)),n:st.reduce((x,y)=>x+y.n,0),k:st.length,lo:Math.min(...st.map(x=>x.pct)),hi:Math.max(...st.map(x=>x.pct))}});
+  let common=days.map((d,i)=>i).filter(i=>all.every(a=>a.st[i]));if(!common.length)common=days.map((d,i)=>i);
+  for(const a of all){a.tot=a.A.map(r=>common.reduce((s,i)=>s+(r[i]||0),0));a.mtot=avg(a.tot)}
+  const ptot=avg(all.map(a=>a.mtot)),N=all.reduce((s,a)=>s+a.R.length,0);
+  const sc=(st)=>{if(!st)return '<td class="nd"></td>';const c=colorFor(toIn(st.mean)),p=Math.round(st.pct);return `<td ${c?`style="background:${c};color:${darkText(c)?"#111":"#fff"}"`:""} title="mean ${fmt(st.mean)} ${uLabel()}, ${p}% of members wet">${p}</td>`};
+  const tc=v=>cell(v).replace("<td","<td class=\"tot\"");
+  const head=`<thead><tr><th></th>${days.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>first ${common.length} days</small></th></tr></thead>`;
+  const sum=`<tbody class="sum">`+all.map(a=>`<tr><th><i style="background:${a.m[3]}"></i>${a.m[2]} <small>${a.R.length}</small></th>${a.st.map(sc).join("")}${tc(a.mtot)}</tr>`).join("")
+    +`<tr class="pool"><th>Pooled</th>${pool.map(sc).join("")}${tc(ptot)}</tr>`
+    +`<tr class="cnt"><th>Members</th>${pool.map(x=>`<td title="${x.k} of ${all.length} models">${x.n}</td>`).join("")}<td class="tot"></td></tr></tbody>`;
+  const mem=all.flatMap(a=>a.A.map((r,i)=>({a,r,i,t:a.tot[i]})));
+  if(S.sort==="wet")mem.sort((x,y)=>y.t-x.t);
+  const sx=(v,lab)=>{if(v===null)return '<td class="nd"></td>';const c=colorFor(toIn(v));return c?`<td style="background:${c}" title="${lab}: ${fmt(v)} ${uLabel()}"></td>`:"<td></td>"};
+  const strip=`<tbody class="strip"><tr class="sec"><th colspan="${days.length+2}">All ${N} members, ${S.sort==="wet"?`wettest first by total over the first ${common.length} days`:"grouped by model"}. Blank where a model's run has ended.</th></tr>`
+    +mem.map(({a,r,i,t})=>{const lab=a.m[2]+" "+(i?"e"+String(i).padStart(2,"0"):"control");return `<tr><th title="${lab}"><i style="background:${a.m[3]}"></i></th>${r.map(v=>sx(v,lab)).join("")}${sx(t,lab+" total").replace("<td","<td class=\"tot\"")}</tr>`}).join("")+"</tbody>";
+  $("grid").innerHTML=head+sum+strip;
+  let bi=0;pool.forEach((x,i)=>{if(x.mean>pool[bi].mean)bi=i});
+  const [w,md]=dl(days[bi]),b=pool[bi];
+  $("find").innerHTML=b.mean<wet
+    ? `Dry: no day has a pooled mean above ${S.unit==="mm"?"0.25 mm":"0.01 in"} through ${dl(days[days.length-1]).join(" ")}.`
+    : `Wettest day: <b>${w} ${md}</b>, pooled mean ${fmt(b.mean)} ${uLabel()}, ${Math.round(b.pct)}% of members wet (models range ${Math.round(b.lo)}–${Math.round(b.hi)}%, ${b.k} of ${all.length} models reach this day). ${common.length}-day pooled total ${fmt(ptot)} ${uLabel()}.`;
+  $("sub").textContent=`${all.length} models · ${N} members · each model weighted equally · cells show % of members wet, coloured by mean · ${S.tz==="GMT"?"days 00z–00z":"days midnight–midnight "+all[0].tz} · fetched ${stamp()}`;
+  msg(bad.length?`Not loaded: ${bad.join(", ")}. The pooled rows leave ${bad.length>1?"them":"it"} out.`:"",bad.length>0);
+}
+
+function render(j){
+  last=j;
+  const {D,R}=daily(j);
   if(!D.length){msg("This model returned no complete days for this place.",true);$("grid").innerHTML="";$("find").textContent="";return}
   const mean=D.map((d,i)=>{const v=R.map(r=>r[i]).filter(x=>x!==null);return v.reduce((a,b)=>a+b,0)/v.length});
   const wet=S.unit==="mm"?0.25:0.01;
   const pct=D.map((d,i)=>{const v=R.map(r=>r[i]).filter(x=>x!==null);return Math.round(100*v.filter(x=>x>=wet).length/v.length)});
   const tot=R.map(r=>r.reduce((a,b)=>a+(b||0),0));
   const meanTot=tot.reduce((a,b)=>a+b,0)/tot.length;
-  const dl=d=>{const x=new Date(d+"T12:00:00Z");return [x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"}),x.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})]};
-  const cell=v=>{if(v===null)return "<td></td>";const c=colorFor(toIn(v));if(!c)return "<td></td>";const show=toIn(v)>=0.05;return `<td style="background:${c};color:${darkText(c)?"#111":"#fff"}" title="${fmt(v)} ${uLabel()}">${show?fmt(v):""}</td>`};
   const head=`<thead><tr><th></th>${D.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>${D.length} days</small></th></tr></thead>`;
   const order=R.map((r,i)=>i);if(S.sort==="wet")order.sort((a,b)=>tot[b]-tot[a]||a-b);
   const body="<tbody>"+order.map(i=>[R[i],i]).map(([r,i])=>`<tr class="${i?"":"ctrl"}"><th>${i?"e"+String(i).padStart(2,"0"):"CONT"}</th>${r.map(cell).join("")}${cell(tot[i]).replace("<td","<td class=\"tot\"")}</tr>`).join("")+"</tbody>";
@@ -168,7 +233,7 @@ function render(j){
     ? `Dry: no day has a member-mean above ${S.unit==="mm"?"0.25 mm":"0.01 in"} through ${dl(D[D.length-1]).join(" ")}.`
     : `Wettest day: <b>${w} ${md}</b>, mean ${fmt(mean[bi])} ${uLabel()}, ${pct[bi]}% of members wet. ${D.length}-day mean total ${fmt(meanTot)} ${uLabel()}.`;
   const m=MODELS.find(x=>x[0]===S.model);
-  $("sub").textContent=`${m?m[1]:S.model} · grid point ${j.latitude.toFixed(2)}, ${j.longitude.toFixed(2)} · ${S.tz==="GMT"?"days 00z–00z":"days midnight–midnight "+j.timezone_abbreviation} · fetched ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
+  $("sub").textContent=`${m?m[1]:S.model} · grid point ${j.latitude.toFixed(2)}, ${j.longitude.toFixed(2)} · ${S.tz==="GMT"?"days 00z–00z":"days midnight–midnight "+j.timezone_abbreviation} · fetched ${stamp()}`;
 }
 
 function setPlace(p){
@@ -203,7 +268,7 @@ async function search(q){
 $("f").addEventListener("submit",e=>{e.preventDefault();search($("q").value)});
 $("model").addEventListener("change",e=>{S.model=e.target.value;store.set("model",S.model);load()});
 $("units").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.unit)return;S.unit=v;store.set("unit",v);syncControls();legend();load()});
-$("sort").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.sort)return;S.sort=v;store.set("sort",v);syncControls();if(last)render(last)});
+$("sort").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.sort)return;S.sort=v;store.set("sort",v);syncControls();if(last)(last.all?renderAll(last):render(last))});
 $("tz").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.tz)return;S.tz=v;store.set("tz",v);syncControls();load()});
 $("picks").addEventListener("click",e=>{const b=e.target.closest("[data-i]");if(b)setPlace(S.recent[+b.dataset.i])});
 
