@@ -40,6 +40,9 @@ button{height:38px;padding:0 14px;border:1px solid var(--accent);background:var(
 table{border-collapse:separate;border-spacing:1px;font-size:11.5px;font-variant-numeric:tabular-nums;width:100%}
 th,td{padding:0;text-align:center;white-space:nowrap}
 thead th{font-weight:700;font-size:11px;padding:4px 2px 6px;line-height:1.2;color:var(--mute);background:var(--panel)}
+thead th[data-k]{cursor:pointer;user-select:none}
+thead th[data-k]:hover,thead th.on{color:var(--accent)}
+thead th:first-child{text-align:left;padding-left:2px}
 thead th small{display:block;font-weight:400;color:var(--faint)}
 tbody th,tfoot th{position:sticky;left:0;background:var(--panel);font-weight:400;color:var(--faint);text-align:left;padding:0 8px 0 2px;z-index:1}
 td{height:19px;min-width:40px;background:var(--panel-raised)}
@@ -81,7 +84,6 @@ a{color:var(--mute)}
     <div><label for="model">Model</label><select id="model"></select></div>
     <div><label>Units</label><div class="seg" id="units"><button data-v="inch">in</button><button data-v="mm">mm</button></div></div>
     <div><label>Days run</label><div class="seg" id="tz"><button data-v="auto">Local midnight</button><button data-v="GMT">00z–00z</button></div></div>
-    <div><label>Order</label><div class="seg" id="sort"><button data-v="wet">Wettest first</button><button data-v="num">Member #</button></div></div>
   </div>
   <div class="picks" id="picks"></div>
 </div></header>
@@ -94,7 +96,7 @@ a{color:var(--mute)}
 </div></main>
 
 <footer class="band" style="padding-top:0"><div class="wrap notes">
-  <p>Each row is one ensemble member's forecast for 24-hour rainfall at the nearest model grid point. CONT is the unperturbed control run. The bottom rows give the member mean and the share of members with at least 0.01 in (0.25 mm). Only complete days are shown.</p>
+  <p>Each row is one ensemble member's forecast for 24-hour rainfall at the nearest model grid point. CONT is the unperturbed control run. The bottom rows give the member mean and the share of members with at least 0.01 in (0.25 mm). Only complete days are shown. Click a column heading to sort by that day, the total, or member number. Click it again to reverse the order.</p>
   <p>All models: each cell shows the percent of that model's members that are wet, coloured by the model's mean. The Pooled row averages the models with each model counting once, and uses only models whose run reaches that day. The Members row shows how many members that is. Totals cover only the days every model reaches, so they compare like with like.</p>
   <p>Data: <a href="https://open-meteo.com/en/docs/ensemble-api">Open-Meteo Ensemble API</a>, free for non-commercial use. ZIP lookup: <a href="https://zippopotam.us">Zippopotam.us</a>. Place search: Open-Meteo Geocoding.</p>
 </div></footer>
@@ -114,7 +116,7 @@ const HOME={name:"90032 · Los Angeles, CA",lat:34.0818,lon:-118.1753};
 const SCALE=[[0.01,"#e6e6e6"],[0.03,"#cfcfcf"],[0.05,"#b0b0b0"],[0.08,"#8f8f8f"],[0.1,"#c6f0bd"],[0.15,"#95e185"],[0.2,"#5ccb4f"],[0.3,"#2aa837"],[0.4,"#11812a"],[0.5,"#a6d0f4"],[0.6,"#69aeec"],[0.75,"#3784d6"],[0.9,"#1d58b4"],[1,"#ffe57a"],[1.25,"#ffc03a"],[1.5,"#ff8e1f"],[2,"#ee4c22"],[2.5,"#c61d1d"],[3,"#8a1b3e"],[4,"#a64ca6"],[5,"#cf7fd7"],[7,"#f2b2ef"]];
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem("ensrain."+k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem("ensrain."+k,JSON.stringify(v))}catch(e){}}};
-let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),sort:store.get("sort","wet"),recent:store.get("recent",[HOME])};
+let S={place:store.get("place",HOME),model:store.get("model","ecmwf_ifs025"),unit:store.get("unit","inch"),tz:store.get("tz","auto"),key:store.get("key","tot"),dir:store.get("dir","desc"),recent:store.get("recent",[HOME])};
 let req=0,last=null;
 
 $("model").innerHTML=MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("")+`<option value="all">All models · weighted equally</option>`;
@@ -130,7 +132,6 @@ function syncControls(){
   $("model").value=S.model;
   for(const b of $("units").children)b.setAttribute("aria-pressed",b.dataset.v===S.unit);
   for(const b of $("tz").children)b.setAttribute("aria-pressed",b.dataset.v===S.tz);
-  for(const b of $("sort").children)b.setAttribute("aria-pressed",b.dataset.v===S.sort);
   $("picks").innerHTML=S.recent.map((p,i)=>`<button type="button" data-i="${i}" class="${p.lat===S.place.lat&&p.lon===S.place.lon?"on":""}">${esc(p.name)}</button>`).join("");
 }
 
@@ -141,6 +142,12 @@ function legend(){
 
 const dl=d=>{const x=new Date(d+"T12:00:00Z");return [x.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"}),x.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})]};
 const cell=v=>{if(v===null)return "<td></td>";const c=colorFor(toIn(v));if(!c)return "<td></td>";const show=toIn(v)>=0.05;return `<td style="background:${c};color:${darkText(c)?"#111":"#fff"}" title="${fmt(v)} ${uLabel()}">${show?fmt(v):""}</td>`};
+// sort key: "tot", "num" or a day; a stored day that is no longer shown falls back to total
+const sortKey=days=>S.key==="num"||S.key==="tot"||days.includes(S.key)?S.key:"tot";
+const header=(days,key,totLabel)=>{const ar=k=>key===k?(S.dir==="asc"?" ▲":" ▼"):"",at=k=>`data-k="${k}" tabindex="0" role="button" title="Sort by this column"${key===k?' class="on"':""}`;
+  return `<thead><tr><th ${at("num")}>Member${ar("num")}</th>${days.map(d=>{const [w,md]=dl(d);return `<th ${at(d)}>${w}${ar(d)}<small>${md}</small></th>`}).join("")}<th ${at("tot")}>Total${ar("tot")}<small>${totLabel}</small></th></tr></thead>`};
+// nulls (run ended) always sort last
+const sorter=get=>(x,y)=>{const a=get(x),b=get(y);if(a===null||b===null)return (a===null)-(b===null);return S.dir==="asc"?a-b:b-a};
 const stamp=()=>new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
 
 async function fetchModel(model,p){
@@ -193,14 +200,14 @@ function renderAll({all,bad}){
   const ptot=avg(all.map(a=>a.mtot)),N=all.reduce((s,a)=>s+a.R.length,0);
   const sc=(st)=>{if(!st)return '<td class="nd"></td>';const c=colorFor(toIn(st.mean)),p=Math.round(st.pct);return `<td ${c?`style="background:${c};color:${darkText(c)?"#111":"#fff"}"`:""} title="mean ${fmt(st.mean)} ${uLabel()}, ${p}% of members wet">${p}</td>`};
   const tc=v=>cell(v).replace("<td","<td class=\"tot\"");
-  const head=`<thead><tr><th></th>${days.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>first ${common.length} days</small></th></tr></thead>`;
+  const key=sortKey(days),kc=days.indexOf(key),head=header(days,key,"first "+common.length+" days");
   const sum=`<tbody class="sum">`+all.map(a=>`<tr><th><i style="background:${a.m[3]}"></i>${a.m[2]} <small>${a.R.length}</small></th>${a.st.map(sc).join("")}${tc(a.mtot)}</tr>`).join("")
     +`<tr class="pool"><th>Pooled</th>${pool.map(sc).join("")}${tc(ptot)}</tr>`
     +`<tr class="cnt"><th>Members</th>${pool.map(x=>`<td title="${x.k} of ${all.length} models">${x.n}</td>`).join("")}<td class="tot"></td></tr></tbody>`;
   const mem=all.flatMap(a=>a.A.map((r,i)=>({a,r,i,t:a.tot[i]})));
-  if(S.sort==="wet")mem.sort((x,y)=>y.t-x.t);
+  if(key==="num"){if(S.dir==="desc")mem.reverse()}else mem.sort(sorter(x=>key==="tot"?x.t:x.r[kc]));
   const sx=(v,lab)=>{if(v===null)return '<td class="nd"></td>';const c=colorFor(toIn(v));return c?`<td style="background:${c}" title="${lab}: ${fmt(v)} ${uLabel()}"></td>`:"<td></td>"};
-  const strip=`<tbody class="strip"><tr class="sec"><th colspan="${days.length+2}">All ${N} members, ${S.sort==="wet"?`wettest first by total over the first ${common.length} days`:"grouped by model"}. Blank where a model's run has ended.</th></tr>`
+  const strip=`<tbody class="strip"><tr class="sec"><th colspan="${days.length+2}">All ${N} members, ${key==="num"?"grouped by model":`${S.dir==="asc"?"driest":"wettest"} first by ${key==="tot"?`total over the first ${common.length} days`:dl(key).join(" ")}`}. Blank where a model's run has ended.</th></tr>`
     +mem.map(({a,r,i,t})=>{const lab=a.m[2]+" "+(i?"e"+String(i).padStart(2,"0"):"control");return `<tr><th title="${lab}"><i style="background:${a.m[3]}"></i></th>${r.map(v=>sx(v,lab)).join("")}${sx(t,lab+" total").replace("<td","<td class=\"tot\"")}</tr>`}).join("")+"</tbody>";
   $("grid").innerHTML=head+sum+strip;
   let bi=0;pool.forEach((x,i)=>{if(x.mean>pool[bi].mean)bi=i});
@@ -221,8 +228,8 @@ function render(j){
   const pct=D.map((d,i)=>{const v=R.map(r=>r[i]).filter(x=>x!==null);return Math.round(100*v.filter(x=>x>=wet).length/v.length)});
   const tot=R.map(r=>r.reduce((a,b)=>a+(b||0),0));
   const meanTot=tot.reduce((a,b)=>a+b,0)/tot.length;
-  const head=`<thead><tr><th></th>${D.map(d=>{const [w,md]=dl(d);return `<th>${w}<small>${md}</small></th>`}).join("")}<th>Total<small>${D.length} days</small></th></tr></thead>`;
-  const order=R.map((r,i)=>i);if(S.sort==="wet")order.sort((a,b)=>tot[b]-tot[a]||a-b);
+  const key=sortKey(D),head=header(D,key,D.length+" days");
+  const order=R.map((r,i)=>i),kc=D.indexOf(key);if(key==="num"){if(S.dir==="desc")order.reverse()}else order.sort(sorter(i=>key==="tot"?tot[i]:R[i][kc]));
   const body="<tbody>"+order.map(i=>[R[i],i]).map(([r,i])=>`<tr class="${i?"":"ctrl"}"><th>${i?"e"+String(i).padStart(2,"0"):"CONT"}</th>${r.map(cell).join("")}${cell(tot[i]).replace("<td","<td class=\"tot\"")}</tr>`).join("")+"</tbody>";
   const foot=`<tfoot><tr><th>Mean</th>${mean.map(cell).join("")}${cell(meanTot).replace("<td","<td class=\"tot\"")}</tr><tr><th>% wet</th>${pct.map(p=>`<td>${p}</td>`).join("")}<td class="tot"></td></tr></tfoot>`;
   $("grid").innerHTML=head+body+foot;
@@ -268,7 +275,9 @@ async function search(q){
 $("f").addEventListener("submit",e=>{e.preventDefault();search($("q").value)});
 $("model").addEventListener("change",e=>{S.model=e.target.value;store.set("model",S.model);load()});
 $("units").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.unit)return;S.unit=v;store.set("unit",v);syncControls();legend();load()});
-$("sort").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.sort)return;S.sort=v;store.set("sort",v);syncControls();if(last)(last.all?renderAll(last):render(last))});
+const pick=th=>{if(!th)return;const k=th.dataset.k;if(S.key===k)S.dir=S.dir==="desc"?"asc":"desc";else{S.key=k;S.dir=k==="num"?"asc":"desc"}store.set("key",S.key);store.set("dir",S.dir);if(last)(last.all?renderAll(last):render(last))};
+$("grid").addEventListener("click",e=>pick(e.target.closest("thead th[data-k]")));
+$("grid").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){const th=e.target.closest("thead th[data-k]");if(th){e.preventDefault();pick(th);const n=$("grid").querySelector(`thead th[data-k="${S.key}"]`);if(n)n.focus()}}});
 $("tz").addEventListener("click",e=>{const v=e.target.dataset.v;if(!v||v===S.tz)return;S.tz=v;store.set("tz",v);syncControls();load()});
 $("picks").addEventListener("click",e=>{const b=e.target.closest("[data-i]");if(b)setPlace(S.recent[+b.dataset.i])});
 
