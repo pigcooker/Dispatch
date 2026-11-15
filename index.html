@@ -1042,6 +1042,11 @@ function shouldBustCache() {
 }
 const BUST_CACHE = shouldBustCache();
 
+// rss2json sends times as "YYYY-MM-DD HH:MM:SS" in UTC with no zone marker; mark them as UTC so they aren't read as local time
+const utcDate = d => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(d || '') ? d.replace(' ', 'T') + 'Z' : d;
+// Short reason shown in a widget when its data fails to load
+const errReason = e => { const m = String(e && e.message || e || '').trim(); return m ? ' (' + m.slice(0, 60).replace(/[<>&]/g, '') + ')' : ''; };
+
 async function loadSource(s) {
   const proxy = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(s.url) + '&api_key=' + RSS2JSON_KEY + (BUST_CACHE ? '&_=' + Date.now() : '');
   try {
@@ -1059,7 +1064,7 @@ async function loadSource(s) {
         return {
           title,
           link: it.link,
-          pubDate: it.pubDate,
+          pubDate: utcDate(it.pubDate),
           image: it.thumbnail || it.enclosure?.link || extractImgFromHTML(it.content) || extractImgFromHTML(it.description) || null,
           snippet
         };
@@ -1167,12 +1172,13 @@ async function loadWeatherAlerts() {
   }
 }
 
-async function loadWeather() {
+async function loadWeather(isRetry) {
   const el = document.getElementById('weather-body');
   try {
     const url = 'https://api.open-meteo.com/v1/forecast?latitude=34.087&longitude=-118.194&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=6';
     const [res, alertsHTML] = await Promise.all([fetch(url), loadWeatherAlerts()]);
     const json = await res.json();
+    if (json.error) throw new Error(json.reason || 'HTTP ' + res.status);
     const c = json.current;
     const d = json.daily;
     const desc = WEATHER_CODES[c.weather_code] || '—';
@@ -1211,7 +1217,8 @@ async function loadWeather() {
       <div id="weather-forecast">${forecastHTML}</div>
     `;
   } catch (e) {
-    el.innerHTML = '<span class="err-msg">Weather unavailable</span>';
+    if (!isRetry) { el.textContent = 'Retrying…'; setTimeout(() => loadWeather(true), 4000); return; }
+    el.innerHTML = '<span class="err-msg">Weather unavailable' + errReason(e) + '</span>';
   }
 }
 
@@ -1503,7 +1510,7 @@ function fmtTime(isoStr) {
   return new Date(isoStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-async function loadSurf(spotId) {
+async function loadSurf(spotId, isRetry) {
   const el = document.getElementById('surf-body');
   const fcEl = document.getElementById('surf-forecast');
   const spot = SURF_SPOTS.find(s => s.id === spotId) || SURF_SPOTS[0];
@@ -1528,6 +1535,7 @@ async function loadSurf(spotId) {
     const marineDaily = await marineDailyRes.json();
     const windDaily = await windDailyRes.json();
     const tide = await tideRes.json();
+    for (const j of [marine, wind, marineDaily, windDaily]) if (j.error) throw new Error(j.reason || 'request failed');
     const m = marine.current || {};
     const w = wind.current || {};
 
@@ -1578,7 +1586,9 @@ async function loadSurf(spotId) {
       `;
     }).join('');
   } catch (e) {
-    el.innerHTML = '<span class="err-msg">Wind/swell data unavailable</span>';
+    const sel = document.getElementById('surf-spot-select');
+    if (!isRetry) { el.textContent = 'Retrying…'; setTimeout(() => { if (!sel || sel.value === spotId) loadSurf(spotId, true); }, 4000); return; }
+    el.innerHTML = '<span class="err-msg">Wind/swell data unavailable' + errReason(e) + '</span>';
   }
 }
 
