@@ -55,6 +55,7 @@
     color: var(--faint);
   }
   #status-line b { color: var(--muted); font-weight: 600; }
+  #refresh-btn { display: none; } /* phone layout only */
 
   /* ---- Shuffle toggle ---- */
   #shuffle-ctrl {
@@ -540,6 +541,21 @@
   @media (max-width: 700px), (max-width: 950px) and (pointer: coarse) {
     header { padding: 14px 14px 10px; }
     #shuffle-ctrl { font-size: 13px; }
+    #status-line { flex: 1 1 calc(100% - 60px); }
+    #refresh-btn {
+      display: block;
+      flex: none;
+      width: 44px; height: 40px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    #refresh-btn:active { border-color: var(--accent); color: var(--accent); }
+    header { align-items: center; }
 
     #widgets-row {
       grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
@@ -646,6 +662,7 @@
     </label>
   </div>
   <div id="status-line">Loading feeds… <b id="status-count"></b></div>
+  <button id="refresh-btn" type="button" aria-label="Refresh" onclick="location.reload()">↻</button>
 </header>
 
 <div id="widgets-row">
